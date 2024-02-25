@@ -1,0 +1,79 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+import os
+import sys
+import time
+import json
+
+import requests
+from bs4 import BeautifulSoup
+from misskey import Misskey
+
+rc = os.environ.get('HOME', '.') + '/.dqxpresence'
+pr = os.environ.get('HOME', '.') + '/.mpresence'
+
+
+class DQX:
+    def __init__(self):
+        j = {}
+        self.pre_status = ''
+        with open(rc) as f:
+            j = json.loads(f.read())
+        try:
+            with open(pr) as f:
+                self.pre_status = f.read().strip()
+        except Exception:
+            self.writePresence('')
+
+        self.instance = j.get('misskey_instance')
+        self.token = j.get('misskey_token')
+        self.user_id = j.get('id')
+        self.namebase = j.get('namebase')
+
+        if self.token and self.instance:
+            self.misskey = Misskey(
+                address=self.instance,
+                i=self.token,
+            )
+
+    def writePresence(self, status):
+        with open(pr, 'w') as f:
+            f.write(status)
+
+    def getStatus(self):
+        r = requests.get(f'http://hiroba.dqx.jp/sc/character/{self.user_id}/status', timeout=10)
+        if r and r.status_code == 200:
+            soup = BeautifulSoup(r.content, 'html.parser')
+            level = soup.find('td', class_='text-center').text
+            level = level.strip('\t\r\n')
+            level = level.replace(u'\xa0', '')
+            level = level.replace('/レベル', '')
+            return level
+        return ''
+
+    def setDisplayName(self, display_name):
+        self.misskey.i_update(name=display_name)
+
+
+if __name__ == '__main__':
+    dqx = DQX()
+
+    if len(sys.argv) > 1:
+        cmd = sys.argv[1]
+        arg = ' '.join(sys.argv[2:])
+        if cmd == 'reset':
+            st = os.stat(pr)
+            if time.time() - st.st_mtime >= 3600:
+                dqx.setDisplayName(f'{dqx.namebase}')
+        elif cmd == 'set':
+            if arg:
+                dqx.setDisplayName(f'{dqx.namebase}＠{arg}')
+        exit()
+
+    status = dqx.getStatus()
+    if status == dqx.pre_status:
+        exit()
+
+    if dqx.namebase:
+        dqx.writePresence(status)
+        dqx.setDisplayName(f'{dqx.namebase}＠{status}')
